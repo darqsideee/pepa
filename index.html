@@ -208,6 +208,10 @@
             opacity: 0;
             animation: popup-open 0.3s forwards;
         }
+        #share-popup {
+            max-width: 500px;
+            width: 400px;
+        }
         @keyframes popup-open {
             to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         }
@@ -239,6 +243,7 @@
             border-radius: 20px;
             padding: 5px;
             position: relative;
+            width: 100%;
         }
         .share-link {
             flex-grow: 1;
@@ -246,6 +251,7 @@
             background: transparent;
             border: none;
             color: #fff;
+            word-break: break-all;
         }
         .copy-btn {
             background: none;
@@ -275,6 +281,17 @@
             margin-right: 10px;
             cursor: pointer;
         }
+        .thumbnail-placeholder {
+            width: 50px;
+            height: 50px;
+            background: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            font-size: 12px;
+            text-align: center;
+        }
         .shared-container {
             display: flex;
             flex-direction: column;
@@ -291,6 +308,11 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            margin-bottom: 20px;
+        }
+        .shared-darq-title {
+            font-size: 48px;
+            color: #fff;
             margin-bottom: 20px;
         }
     </style>
@@ -363,7 +385,7 @@
         const archiveSection = document.getElementById('archive');
         const dashboard = document.getElementById('dashboard');
 
-        let items = [];
+        let items = JSON.parse(localStorage.getItem('uploaded_items') || '[]');
         let usedStorage = 0;
         const totalStorage = 10;
         let selectedCount = 0;
@@ -382,6 +404,10 @@
                 dashboard.style.display = 'none';
                 const sharedContainer = document.createElement('div');
                 sharedContainer.className = 'shared-container';
+                const darqTitle = document.createElement('div');
+                darqTitle.className = 'shared-darq-title';
+                darqTitle.textContent = 'DARQ';
+                sharedContainer.appendChild(darqTitle);
                 const frame = document.createElement('div');
                 frame.className = 'shared-frame';
                 frame.innerHTML = `
@@ -417,27 +443,56 @@
                     folderPopup.style.display = 'block';
                 };
                 sharedContainer.appendChild(downloadBtn);
+                const backBtn = document.createElement('button');
+                backBtn.style.background = 'none';
+                backBtn.style.color = 'red';
+                backBtn.style.border = 'none';
+                backBtn.style.cursor = 'pointer';
+                backBtn.style.fontSize = '16px';
+                backBtn.innerHTML = '← Vrátit k archivu';
+                backBtn.onclick = () => {
+                    window.location.href = window.location.origin + window.location.pathname;
+                };
+                sharedContainer.appendChild(backBtn);
                 document.body.appendChild(sharedContainer);
             }
+        } else {
+            if (items.length > 0) {
+                renderItems();
+                archiveSection.style.display = 'block';
+            }
+            updateStorage();
         }
 
-        document.getElementById('file-input').addEventListener('change', (e) => {
-            handleFiles(e.target.files);
+        async function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        document.getElementById('file-input').addEventListener('change', async (e) => {
+            await handleFiles(e.target.files);
             renderItems();
             updateStorage();
+            saveUploadedItems();
             if (items.length > 0) {
                 archiveSection.style.display = 'block';
             }
         });
 
-        function handleFiles(files) {
+        async function handleFiles(files) {
             const root = { children: [] };
-            Array.from(files).forEach(file => {
+            for (let file of Array.from(files)) {
                 const pathParts = file.webkitRelativePath.split('/');
                 let current = root;
-                pathParts.forEach((part, i) => {
-                    if (part === '') return;
+                for (let i = 0; i < pathParts.length; i++) {
+                    const part = pathParts[i];
+                    if (part === '') continue;
                     if (i === pathParts.length - 1) {
+                        const data = await fileToBase64(file);
                         current.children.push({
                             name: part,
                             type: 'file',
@@ -446,7 +501,7 @@
                             ext: part.split('.').pop().toLowerCase(),
                             shared: false,
                             link: '',
-                            fileObj: file
+                            data: data
                         });
                         usedStorage += file.size / 1024 / 1024 / 1024;
                     } else {
@@ -457,8 +512,8 @@
                         }
                         current = folder;
                     }
-                });
-            });
+                }
+            }
             items.push(...root.children);
             calculateSizes(items);
         }
@@ -513,6 +568,7 @@
                 span.contentEditable = false;
                 items[index].name = span.textContent.trim() || 'Bez názvu';
                 renderItems();
+                saveUploadedItems();
             };
             span.onkeydown = (e) => {
                 if (e.key === 'Enter') {
@@ -535,9 +591,9 @@
                 li.className = 'folder-item';
                 let thumbnail = '';
                 if (['jpg', 'png', 'gif'].includes(child.ext)) {
-                    thumbnail = `<img class="thumbnail" src="${URL.createObjectURL(child.fileObj)}" alt="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})">`;
+                    thumbnail = `<img class="thumbnail" src="${child.data || ''}" alt="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})">`;
                 } else if (['mp4', 'mkv', 'avi'].includes(child.ext)) {
-                    thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})"><source src="${URL.createObjectURL(child.fileObj)}" type="video/${child.ext}"></video>`;
+                    thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})"><source src="${child.data || ''}" type="video/${child.ext}"></video>`;
                 }
                 li.innerHTML = `
                     ${thumbnail}
@@ -568,11 +624,15 @@
 
         function openPreview(ext, childIndex) {
             const child = currentChildren[childIndex];
+            if (!child.data) {
+                alert('Náhled není dostupný.');
+                return;
+            }
             previewContent.innerHTML = '';
             if (['jpg', 'png', 'gif'].includes(ext)) {
-                previewContent.innerHTML = `<img src="${URL.createObjectURL(child.fileObj)}" style="max-width: 100%;">`;
+                previewContent.innerHTML = `<img src="${child.data}" style="max-width: 100%;">`;
             } else if (['mp4', 'mkv', 'avi'].includes(ext)) {
-                previewContent.innerHTML = `<video controls style="max-width: 100%;"><source src="${URL.createObjectURL(child.fileObj)}" type="video/${ext}"></video>`;
+                previewContent.innerHTML = `<video controls style="max-width: 100%;"><source src="${child.data}" type="video/${ext}"></video>`;
             }
             previewPopup.style.display = 'block';
         }
@@ -591,13 +651,15 @@
         }
 
         function downloadSingleItem(item, downloadName) {
+            if (!item.data && item.type === 'file') {
+                alert('Data nejsou dostupná.');
+                return;
+            }
             if (item.type === 'file') {
-                if (item.fileObj) {
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(item.fileObj);
-                    a.download = downloadName || item.name;
-                    a.click();
-                }
+                const a = document.createElement('a');
+                a.href = item.data;
+                a.download = downloadName || item.name;
+                a.click();
             } else {
                 const zip = new JSZip();
                 addToZip(zip, item, '');
@@ -612,7 +674,9 @@
 
         function addToZip(zip, node, path) {
             if (node.type === 'file') {
-                zip.file(path + node.name, node.fileObj);
+                if (!node.data) return;
+                const base64 = node.data.split(',')[1];
+                zip.file(path + node.name, base64, {base64: true});
             } else {
                 const folderZip = zip.folder(path + node.name);
                 node.children.forEach(child => {
@@ -623,21 +687,13 @@
 
         function shareItem(index) {
             const id = Math.random().toString(36).substring(2, 10);
-            // Store without fileObj
             const itemCopy = JSON.parse(JSON.stringify(items[index]));
-            removeFileObjs(itemCopy);
             localStorage.setItem('shared_' + id, JSON.stringify(itemCopy));
             items[index].link = `https://darqsideee.github.io/pepa/?share=${id}`;
             items[index].shared = true;
             renderItems();
+            saveUploadedItems();
             openSharePopup(index);
-        }
-
-        function removeFileObjs(node) {
-            delete node.fileObj;
-            if (node.type === 'folder') {
-                node.children.forEach(removeFileObjs);
-            }
         }
 
         function openSharePopup(index) {
@@ -656,22 +712,36 @@
 
         function copyLink() {
             navigator.clipboard.writeText(shareLinkInput.value);
+            alert('Odkaz zkopírován!');
         }
 
         function regenerateLink() {
+            const oldLink = items[currentIndex].link;
+            if (oldLink) {
+                const oldId = new URL(oldLink).searchParams.get('share');
+                localStorage.removeItem('shared_' + oldId);
+            }
             const id = Math.random().toString(36).substring(2, 10);
             const itemCopy = JSON.parse(JSON.stringify(items[currentIndex]));
-            removeFileObjs(itemCopy);
             localStorage.setItem('shared_' + id, JSON.stringify(itemCopy));
             items[currentIndex].link = `https://darqsideee.github.io/pepa/?share=${id}`;
             shareLinkInput.value = items[currentIndex].link;
+            renderItems();
+            saveUploadedItems();
+            alert('Odkaz převytvořen!');
         }
 
         function removeShare() {
+            const oldLink = items[currentIndex].link;
+            if (oldLink) {
+                const oldId = new URL(oldLink).searchParams.get('share');
+                localStorage.removeItem('shared_' + oldId);
+            }
             items[currentIndex].shared = false;
             items[currentIndex].link = '';
             closeSharePopup();
             renderItems();
+            saveUploadedItems();
         }
 
         function updateStorage() {
@@ -680,7 +750,20 @@
             storageText.textContent = `${usedStorage.toFixed(1)} GB z ${totalStorage} GB`;
         }
 
-        updateStorage();
+        function saveUploadedItems() {
+            const itemsCopy = JSON.parse(JSON.stringify(items));
+            removeData(itemsCopy);
+            localStorage.setItem('uploaded_items', JSON.stringify(itemsCopy));
+        }
+
+        function removeData(nodes) {
+            nodes.forEach(node => {
+                delete node.data;
+                if (node.type === 'folder') {
+                    removeData(node.children);
+                }
+            });
+        }
 
         window.addEventListener('click', (e) => {
             if (e.target === sharePopup) closeSharePopup();
@@ -689,20 +772,14 @@
         });
 
         downloadWhole.onclick = () => {
-            if (isSharedMode) {
-                return;
-            }
             downloadSingleItem(currentItem, currentItem.name);
         };
 
         downloadSelected.onclick = () => {
-            if (isSharedMode) {
-                return;
-            }
             const checkboxes = folderContent.querySelectorAll('input[type="checkbox"]:checked');
             if (checkboxes.length === 0) return;
             if (checkboxes.length === 1) {
-                const childIndex = Array.from(checkboxes[0].parentNode.querySelectorAll('input[type="checkbox"]')).indexOf(checkboxes[0]);
+                const childIndex = Array.from(folderContent.querySelectorAll('input[type="checkbox"]')).indexOf(checkboxes[0]);
                 const selectedItem = currentChildren[childIndex];
                 downloadSingleItem(selectedItem, selectedItem.name);
             } else {
