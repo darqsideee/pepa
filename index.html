@@ -210,6 +210,12 @@
         @keyframes popup-open {
             to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         }
+        .popup.closing, .preview-popup.closing {
+            animation: popup-close 0.3s forwards;
+        }
+        @keyframes popup-close {
+            to { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+        }
         .close-btn {
             position: absolute;
             top: 10px;
@@ -228,11 +234,15 @@
             display: flex;
             align-items: center;
             margin-top: 10px;
+            background: #333;
+            border-radius: 20px;
+            padding: 5px;
+            position: relative;
         }
         .share-link {
             flex-grow: 1;
             padding: 5px;
-            background: #333;
+            background: transparent;
             border: none;
             color: #fff;
         }
@@ -241,7 +251,7 @@
             border: none;
             color: #fff;
             cursor: pointer;
-            margin-left: 10px;
+            padding: 0 10px;
             transition: transform 0.3s;
         }
         .copy-btn:hover {
@@ -275,7 +285,7 @@
                     <div class="upload-icon">📁 +</div>
                     Přidat složku/soubor
                 </div>
-                <input type="file" id="file-input" style="display: none;" multiple webkitdirectory>
+                <input type="file" id="file-input" style="display: none;" multiple webkitdirectory directory>
                 <div class="storage-frame">
                     <h4>Zabrané úložiště</h4>
                     <progress id="storage-bar" value="0" max="100"></progress>
@@ -307,14 +317,12 @@
             <p>Celková velikost: <span id="folder-size"></span></p>
             <button id="download-selected">Stáhnout vybrané (0)</button>
             <ul id="folder-content" class="folder-content"></ul>
-            <button onclick="closeFolderPopup()">Zavřít</button>
         </div>
 
         <!-- Popup pro preview souboru -->
         <div id="preview-popup" class="preview-popup">
             <button class="close-btn" onclick="closePreviewPopup()">×</button>
             <div id="preview-content"></div>
-            <button onclick="closePreviewPopup()">Zavřít</button>
         </div>
     </div>
 
@@ -357,16 +365,8 @@
                 pathParts.forEach((part, i) => {
                     if (part === '') return;
                     if (i === pathParts.length - 1) {
-                        let name = part;
-                        const baseName = name.split(' (')[0];
-                        const existing = current.children.filter(c => c.name.startsWith(baseName));
-                        if (existing.length > 0) {
-                            let count = 1;
-                            while (existing.some(c => c.name === (count === 1 ? name : `${baseName} (${count})`))) count++;
-                            name = `${baseName} (${count})`;
-                        }
                         current.children.push({
-                            name: name,
+                            name: part,
                             type: 'file',
                             size: (file.size / 1024 / 1024).toFixed(2),
                             path: file.webkitRelativePath,
@@ -376,34 +376,16 @@
                         });
                         usedStorage += file.size / 1024 / 1024 / 1024;
                     } else {
-                        let name = part;
-                        const baseName = name.split(' (')[0];
-                        const existing = current.children.filter(c => c.name.startsWith(baseName) && c.type === 'folder');
-                        if (existing.length > 0) {
-                            let count = 1;
-                            while (existing.some(c => c.name === (count === 1 ? name : `${baseName} (${count})`))) count++;
-                            name = `${baseName} (${count})`;
-                        }
-                        let folder = current.children.find(c => c.name === name && c.type === 'folder');
+                        let folder = current.children.find(c => c.name === part && c.type === 'folder');
                         if (!folder) {
-                            folder = { name: name, type: 'folder', children: [], size: 0 };
+                            folder = { name: part, type: 'folder', children: [], size: 0 };
                             current.children.push(folder);
                         }
                         current = folder;
                     }
                 });
             });
-            // Přidání do items s kontrolou duplicit na root level
-            root.children.forEach(newItem => {
-                const baseName = newItem.name.split(' (')[0];
-                const existingRoot = items.filter(i => i.name.startsWith(baseName) && i.type === newItem.type);
-                if (existingRoot.length > 0) {
-                    let count = 1;
-                    while (existingRoot.some(i => i.name === (count === 1 ? newItem.name : `${baseName} (${count})`))) count++;
-                    newItem.name = `${baseName} (${count})`;
-                }
-                items.push(newItem);
-            });
+            items.push(...root.children);
             calculateSizes(items);
         }
 
@@ -483,6 +465,14 @@
             folderPopup.style.display = 'block';
         }
 
+        function closeFolderPopup() {
+            folderPopup.classList.add('closing');
+            setTimeout(() => {
+                folderPopup.style.display = 'none';
+                folderPopup.classList.remove('closing');
+            }, 300);
+        }
+
         function toggleSelect(checkbox, childIndex) {
             selectedCount += checkbox.checked ? 1 : -1;
             updateDownloadButton();
@@ -503,6 +493,14 @@
             previewPopup.style.display = 'block';
         }
 
+        function closePreviewPopup() {
+            previewPopup.classList.add('closing');
+            setTimeout(() => {
+                previewPopup.style.display = 'none';
+                previewPopup.classList.remove('closing');
+            }, 300);
+        }
+
         function downloadItem(index) {
             alert(`Stahování celého ${items[index].name}... (mock)`);
         }
@@ -511,7 +509,7 @@
             items[index].shared = true;
             items[index].link = `https://example.com/share/${Math.random().toString(36).substring(7)}`;
             renderItems();
-            openSharePopup(index);
+            openSharePopup(index); // Otevřít popup po sdílení
         }
 
         function openSharePopup(index) {
@@ -520,12 +518,17 @@
             sharePopup.style.display = 'block';
         }
 
+        function closeSharePopup() {
+            sharePopup.classList.add('closing');
+            setTimeout(() => {
+                sharePopup.style.display = 'none';
+                sharePopup.classList.remove('closing');
+            }, 300);
+        }
+
         function copyLink() {
-            navigator.clipboard.writeText(shareLinkInput.value).then(() => {
-                alert('Odkaz zkopírován!');
-            }).catch(err => {
-                alert('Chyba při kopírování: ' + err);
-            });
+            navigator.clipboard.writeText(shareLinkInput.value);
+            alert('Odkaz zkopírován!');
         }
 
         function regenerateLink() {
@@ -537,7 +540,7 @@
         function removeShare() {
             items[currentIndex].shared = false;
             items[currentIndex].link = '';
-            closePopup('share-popup');
+            closeSharePopup();
             renderItems();
         }
 
@@ -547,21 +550,12 @@
             storageText.textContent = `${usedStorage.toFixed(1)} GB z ${totalStorage} GB`;
         }
 
-        function closePopup(id) {
-            const popup = document.getElementById(id);
-            popup.classList.add('closing');
-            setTimeout(() => {
-                popup.style.display = 'none';
-                popup.classList.remove('closing');
-            }, 300);
-        }
-
         updateStorage();
 
         window.addEventListener('click', (e) => {
-            if (e.target === sharePopup) closePopup('share-popup');
-            if (e.target === folderPopup) closePopup('folder-popup');
-            if (e.target === previewPopup) closePopup('preview-popup');
+            if (e.target === sharePopup) closeSharePopup();
+            if (e.target === folderPopup) closeFolderPopup();
+            if (e.target === previewPopup) closePreviewPopup();
         });
     </script>
 </body>
