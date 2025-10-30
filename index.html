@@ -45,7 +45,7 @@
             overflow: hidden;
             white-space: nowrap;
             border-right: 3px solid #fff;
-            animation: typing 2s steps(4) forwards, blink 0.75s step-end 2s forwards; /* Fade-out po dokončení */
+            animation: typing 2s steps(4) forwards, blink 0.75s step-end 2s forwards;
         }
         @keyframes typing {
             from { width: 0; }
@@ -133,7 +133,7 @@
             padding: 0;
             display: flex;
             flex-wrap: wrap;
-            justify-content: flex-start; /* Odleva doprava */
+            justify-content: flex-start;
             gap: 20px;
         }
         .file-item {
@@ -144,6 +144,7 @@
             text-align: center;
             cursor: pointer;
             transition: transform 0.3s, box-shadow 0.3s;
+            position: relative;
         }
         .file-item:hover {
             transform: scale(1.05);
@@ -175,6 +176,37 @@
         }
         .action-btn:hover {
             transform: scale(1.1);
+            color: #8A2BE2;
+        }
+        .menu-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        .menu {
+            display: none;
+            position: absolute;
+            top: 30px;
+            right: 0;
+            background: #333;
+            border-radius: 5px;
+            padding: 5px;
+            z-index: 10;
+        }
+        .menu button {
+            background: none;
+            border: none;
+            color: #fff;
+            cursor: pointer;
+            display: block;
+            padding: 5px 10px;
+        }
+        .menu button:hover {
             color: #8A2BE2;
         }
         button, .share-btn, .manage-share-btn {
@@ -369,6 +401,9 @@
     </div>
 
     <script>
+        const workerUrl = 'https://your-worker.your-username.workers.dev'; // Nahraďte vaším Cloudflare Worker URL
+        const publicBase = 'https://pub-abcdef1234567890.r2.dev/'; // Nahraďte vaším public R2 URL
+
         const fileList = document.getElementById('file-list');
         const storageBar = document.getElementById('storage-bar');
         const storageText = document.getElementById('storage-text');
@@ -397,85 +432,78 @@
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('share')) {
             const id = urlParams.get('share');
-            const sharedData = localStorage.getItem('shared_' + id);
-            if (sharedData) {
-                const sharedItem = JSON.parse(sharedData);
-                isSharedMode = true;
-                dashboard.style.display = 'none';
-                const sharedContainer = document.createElement('div');
-                sharedContainer.className = 'shared-container';
-                const darqTitle = document.createElement('div');
-                darqTitle.className = 'shared-darq-title';
-                darqTitle.textContent = 'DARQ';
-                sharedContainer.appendChild(darqTitle);
-                const frame = document.createElement('div');
-                frame.className = 'shared-frame';
-                frame.innerHTML = `
-                    <div class="file-icon">${sharedItem.type === 'folder' ? '📁' : '📄'}</div>
-                    <span class="file-name">${sharedItem.name}</span>
-                    <div class="file-size">${formatSize(sharedItem.size)}</div>
-                `;
-                sharedContainer.appendChild(frame);
-                const downloadBtn = document.createElement('button');
-                downloadBtn.textContent = 'Stáhnout';
-                downloadBtn.onclick = () => {
-                    currentItem = sharedItem;
-                    folderName.textContent = sharedItem.name;
-                    folderSizeEl.textContent = formatSize(sharedItem.size);
-                    folderContent.innerHTML = '';
-                    selectedCount = 0;
-                    updateDownloadButton();
-                    currentChildren = sharedItem.type === 'folder' ? sharedItem.children : [sharedItem];
-                    currentChildren.forEach((child, childIndex) => {
-                        const li = document.createElement('li');
-                        li.className = 'folder-item';
-                        let thumbnail = '';
-                        if (['jpg', 'png', 'gif', 'mp4', 'mkv', 'avi'].includes(child.ext)) {
-                            thumbnail = `<span class="thumbnail-placeholder">Náhled nedostupný</span>`;
-                        }
-                        li.innerHTML = `
-                            ${thumbnail}
-                            <input type="checkbox" onchange="toggleSelect(this, ${childIndex})">
-                            ${child.name} (${formatSize(child.size)})
-                        `;
-                        folderContent.appendChild(li);
-                    });
-                    folderPopup.style.display = 'block';
-                };
-                sharedContainer.appendChild(downloadBtn);
-                const backBtn = document.createElement('button');
-                backBtn.style.background = 'none';
-                backBtn.style.color = 'red';
-                backBtn.style.border = 'none';
-                backBtn.style.cursor = 'pointer';
-                backBtn.style.fontSize = '16px';
-                backBtn.innerHTML = '← Vrátit k archivu';
-                backBtn.onclick = () => {
-                    window.location.href = window.location.origin + window.location.pathname;
-                };
-                sharedContainer.appendChild(backBtn);
-                document.body.appendChild(sharedContainer);
-            }
+            fetchSharedItem(id).then(sharedItem => {
+                if (sharedItem) {
+                    isSharedMode = true;
+                    dashboard.style.display = 'none';
+                    const sharedContainer = document.createElement('div');
+                    sharedContainer.className = 'shared-container';
+                    const darqTitle = document.createElement('div');
+                    darqTitle.className = 'shared-darq-title';
+                    darqTitle.textContent = 'DARQ';
+                    sharedContainer.appendChild(darqTitle);
+                    const frame = document.createElement('div');
+                    frame.className = 'shared-frame';
+                    frame.innerHTML = `
+                        <div class="file-icon">${sharedItem.type === 'folder' ? '📁' : '📄'}</div>
+                        <span class="file-name">${sharedItem.name}</span>
+                        <div class="file-size">${formatSize(sharedItem.size)}</div>
+                    `;
+                    sharedContainer.appendChild(frame);
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.textContent = 'Stáhnout';
+                    downloadBtn.onclick = () => {
+                        currentItem = sharedItem;
+                        folderName.textContent = sharedItem.name;
+                        folderSizeEl.textContent = formatSize(sharedItem.size);
+                        folderContent.innerHTML = '';
+                        selectedCount = 0;
+                        updateDownloadButton();
+                        currentChildren = sharedItem.type === 'folder' ? sharedItem.children : [sharedItem];
+                        currentChildren.forEach((child, childIndex) => {
+                            const li = document.createElement('li');
+                            li.className = 'folder-item';
+                            let thumbnail = '';
+                            if (['jpg', 'png', 'gif', 'mp4', 'mkv', 'avi'].includes(child.ext)) {
+                                thumbnail = `<span class="thumbnail-placeholder">Náhled nedostupný</span>`;
+                            }
+                            li.innerHTML = `
+                                ${thumbnail}
+                                <input type="checkbox" onchange="toggleSelect(this, ${childIndex})">
+                                ${child.name} (${formatSize(child.size)})
+                            `;
+                            folderContent.appendChild(li);
+                        });
+                        folderPopup.style.display = 'block';
+                    };
+                    sharedContainer.appendChild(downloadBtn);
+                    const backBtn = document.createElement('button');
+                    backBtn.style.background = 'none';
+                    backBtn.style.color = 'red';
+                    backBtn.style.border = 'none';
+                    backBtn.style.cursor = 'pointer';
+                    backBtn.style.fontSize = '16px';
+                    backBtn.innerHTML = '← Vrátit k archivu';
+                    backBtn.onclick = () => {
+                        window.location.href = window.location.origin + window.location.pathname;
+                    };
+                    sharedContainer.appendChild(backBtn);
+                    document.body.appendChild(sharedContainer);
+                }
+            });
         } else {
             if (items.length > 0) {
                 renderItems();
                 archiveSection.style.display = 'block';
             }
+            calculateUsedStorage();
             updateStorage();
-        }
-
-        async function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-                reader.readAsDataURL(file);
-            });
         }
 
         document.getElementById('file-input').addEventListener('change', async (e) => {
             await handleFiles(e.target.files);
             renderItems();
+            calculateUsedStorage();
             updateStorage();
             saveUploadedItems();
             if (items.length > 0) {
@@ -485,25 +513,32 @@
 
         async function handleFiles(files) {
             const root = { children: [] };
-            for (let file of Array.from(files)) {
+            const fileArray = Array.from(files);
+            for (let file of fileArray) {
                 const pathParts = file.webkitRelativePath.split('/');
                 let current = root;
                 for (let i = 0; i < pathParts.length; i++) {
                     const part = pathParts[i];
                     if (part === '') continue;
                     if (i === pathParts.length - 1) {
-                        const data = await fileToBase64(file);
+                        const key = crypto.randomUUID() + '/' + part;
+                        const presigned = await fetch(`${workerUrl}/presign-upload?key=${encodeURIComponent(key)}`).then(r => r.text());
+                        await fetch(presigned, {
+                            method: 'PUT',
+                            body: file,
+                            headers: {
+                                'Content-Type': file.type || 'application/octet-stream'
+                            }
+                        });
                         current.children.push({
                             name: part,
                             type: 'file',
                             size: (file.size / 1024 / 1024).toFixed(2),
-                            path: file.webkitRelativePath,
                             ext: part.split('.').pop().toLowerCase(),
                             shared: false,
                             link: '',
-                            data: data
+                            url: publicBase + key
                         });
-                        usedStorage += file.size / 1024 / 1024 / 1024;
                     } else {
                         let folder = current.children.find(c => c.name === part && c.type === 'folder');
                         if (!folder) {
@@ -527,6 +562,10 @@
             });
         }
 
+        function calculateUsedStorage() {
+            usedStorage = items.reduce((sum, item) => sum + parseFloat(item.size), 0) / 1024;
+        }
+
         function formatSize(size) {
             size = parseFloat(size);
             if (size >= 1024) {
@@ -542,6 +581,10 @@
                 const li = document.createElement('li');
                 li.className = 'file-item';
                 li.innerHTML = `
+                    <button class="menu-btn" onclick="toggleMenu(${index})">⋯</button>
+                    <div class="menu" id="menu-${index}">
+                        <button onclick="removeItem(${index})">Odstranit soubor</button>
+                    </div>
                     <div class="file-icon">${item.type === 'folder' ? '📁' : '📄'}</div>
                     <span class="file-name" contenteditable="false" ondblclick="editName(this, ${index})">${item.name}</span>
                     <div class="file-size">${formatSize(item.size)}</div>
@@ -553,12 +596,31 @@
                     </div>
                 `;
                 li.onclick = (e) => {
-                    if (!e.target.closest('button, .file-name')) {
+                    if (!e.target.closest('button, .file-name, .menu-btn')) {
                         openDetailPopup(index);
                     }
                 };
                 fileList.appendChild(li);
             });
+        }
+
+        function toggleMenu(index) {
+            const menu = document.getElementById(`menu-${index}`);
+            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+        }
+
+        async function removeItem(index) {
+            const item = items[index];
+            await fetch(`${workerUrl}/remove-item`, {
+                method: 'POST',
+                body: JSON.stringify(item),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            items.splice(index, 1);
+            renderItems();
+            calculateUsedStorage();
+            updateStorage();
+            saveUploadedItems();
         }
 
         function editName(span, index) {
@@ -591,9 +653,9 @@
                 li.className = 'folder-item';
                 let thumbnail = '';
                 if (['jpg', 'png', 'gif'].includes(child.ext)) {
-                    thumbnail = `<img class="thumbnail" src="${child.data || ''}" alt="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})">`;
+                    thumbnail = `<img class="thumbnail" src="${child.url}" alt="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})">`;
                 } else if (['mp4', 'mkv', 'avi'].includes(child.ext)) {
-                    thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})"><source src="${child.data || ''}" type="video/${child.ext}"></video>`;
+                    thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})"><source src="${child.url}" type="video/${child.ext}"></video>`;
                 }
                 li.innerHTML = `
                     ${thumbnail}
@@ -624,15 +686,11 @@
 
         function openPreview(ext, childIndex) {
             const child = currentChildren[childIndex];
-            if (!child.data) {
-                alert('Náhled není dostupný.');
-                return;
-            }
             previewContent.innerHTML = '';
             if (['jpg', 'png', 'gif'].includes(ext)) {
-                previewContent.innerHTML = `<img src="${child.data}" style="max-width: 100%;">`;
+                previewContent.innerHTML = `<img src="${child.url}" style="max-width: 100%;">`;
             } else if (['mp4', 'mkv', 'avi'].includes(ext)) {
-                previewContent.innerHTML = `<video controls style="max-width: 100%;"><source src="${child.data}" type="video/${ext}"></video>`;
+                previewContent.innerHTML = `<video controls style="max-width: 100%;"><source src="${child.url}" type="video/${ext}"></video>`;
             }
             previewPopup.style.display = 'block';
         }
@@ -650,46 +708,44 @@
             downloadSingleItem(item, item.name);
         }
 
-        function downloadSingleItem(item, downloadName) {
-            if (!item.data && item.type === 'file') {
-                alert('Data nejsou dostupná.');
-                return;
-            }
+        async function downloadSingleItem(item, downloadName) {
             if (item.type === 'file') {
                 const a = document.createElement('a');
-                a.href = item.data;
+                a.href = item.url;
                 a.download = downloadName || item.name;
                 a.click();
             } else {
                 const zip = new JSZip();
-                addToZip(zip, item, '');
-                zip.generateAsync({type: "blob"}).then(function(content) {
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(content);
-                    a.download = (downloadName || item.name) + '.zip';
-                    a.click();
-                });
+                await addToZip(zip, item, '');
+                const content = await zip.generateAsync({type: "blob"});
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = (downloadName || item.name) + '.zip';
+                a.click();
             }
         }
 
-        function addToZip(zip, node, path) {
+        async function addToZip(zip, node, path) {
             if (node.type === 'file') {
-                if (!node.data) return;
-                const base64 = node.data.split(',')[1];
-                zip.file(path + node.name, base64, {base64: true});
+                const response = await fetch(node.url);
+                const blob = await response.blob();
+                zip.file(path + node.name, blob);
             } else {
                 const folderZip = zip.folder(path + node.name);
-                node.children.forEach(child => {
-                    addToZip(folderZip, child, '');
-                });
+                for (let child of node.children) {
+                    await addToZip(folderZip, child, '');
+                }
             }
         }
 
-        function shareItem(index) {
-            const id = Math.random().toString(36).substring(2, 10);
-            const itemCopy = JSON.parse(JSON.stringify(items[index]));
-            localStorage.setItem('shared_' + id, JSON.stringify(itemCopy));
-            items[index].link = `https://darqsideee.github.io/pepa/?share=${id}`;
+        async function shareItem(index) {
+            const response = await fetch(`${workerUrl}/share`, {
+                method: 'POST',
+                body: JSON.stringify(items[index]),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const id = await response.text();
+            items[index].link = window.location.origin + window.location.pathname + '?share=' + id;
             items[index].shared = true;
             renderItems();
             saveUploadedItems();
@@ -715,28 +771,26 @@
             alert('Odkaz zkopírován!');
         }
 
-        function regenerateLink() {
+        async function regenerateLink() {
             const oldLink = items[currentIndex].link;
-            if (oldLink) {
-                const oldId = new URL(oldLink).searchParams.get('share');
-                localStorage.removeItem('shared_' + oldId);
-            }
-            const id = Math.random().toString(36).substring(2, 10);
-            const itemCopy = JSON.parse(JSON.stringify(items[currentIndex]));
-            localStorage.setItem('shared_' + id, JSON.stringify(itemCopy));
-            items[currentIndex].link = `https://darqsideee.github.io/pepa/?share=${id}`;
+            const oldId = new URL(oldLink).searchParams.get('share');
+            const response = await fetch(`${workerUrl}/regenerate?id=${oldId}`, {
+                method: 'POST',
+                body: JSON.stringify(items[currentIndex]),
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const newId = await response.text();
+            items[currentIndex].link = window.location.origin + window.location.pathname + '?share=' + newId;
             shareLinkInput.value = items[currentIndex].link;
             renderItems();
             saveUploadedItems();
             alert('Odkaz převytvořen!');
         }
 
-        function removeShare() {
+        async function removeShare() {
             const oldLink = items[currentIndex].link;
-            if (oldLink) {
-                const oldId = new URL(oldLink).searchParams.get('share');
-                localStorage.removeItem('shared_' + oldId);
-            }
+            const oldId = new URL(oldLink).searchParams.get('share');
+            await fetch(`${workerUrl}/remove-share?id=${oldId}`, { method: 'POST' });
             items[currentIndex].shared = false;
             items[currentIndex].link = '';
             closeSharePopup();
@@ -751,18 +805,15 @@
         }
 
         function saveUploadedItems() {
-            const itemsCopy = JSON.parse(JSON.stringify(items));
-            removeData(itemsCopy);
-            localStorage.setItem('uploaded_items', JSON.stringify(itemsCopy));
+            localStorage.setItem('uploaded_items', JSON.stringify(items));
         }
 
-        function removeData(nodes) {
-            nodes.forEach(node => {
-                delete node.data;
-                if (node.type === 'folder') {
-                    removeData(node.children);
-                }
-            });
+        async function fetchSharedItem(id) {
+            const response = await fetch(`${workerUrl}/get-shared/${id}`);
+            if (response.ok) {
+                return await response.json();
+            }
+            return null;
         }
 
         window.addEventListener('click', (e) => {
@@ -771,30 +822,29 @@
             if (e.target === previewPopup) closePreviewPopup();
         });
 
-        downloadWhole.onclick = () => {
-            downloadSingleItem(currentItem, currentItem.name);
+        downloadWhole.onclick = async () => {
+            await downloadSingleItem(currentItem, currentItem.name);
         };
 
-        downloadSelected.onclick = () => {
+        downloadSelected.onclick = async () => {
             const checkboxes = folderContent.querySelectorAll('input[type="checkbox"]:checked');
             if (checkboxes.length === 0) return;
             if (checkboxes.length === 1) {
                 const childIndex = Array.from(folderContent.querySelectorAll('input[type="checkbox"]')).indexOf(checkboxes[0]);
                 const selectedItem = currentChildren[childIndex];
-                downloadSingleItem(selectedItem, selectedItem.name);
+                await downloadSingleItem(selectedItem, selectedItem.name);
             } else {
                 const zip = new JSZip();
-                checkboxes.forEach(checkbox => {
+                for (let checkbox of checkboxes) {
                     const childIndex = Array.from(folderContent.querySelectorAll('input[type="checkbox"]')).indexOf(checkbox);
                     const selectedItem = currentChildren[childIndex];
-                    addToZip(zip, selectedItem, '');
-                });
-                zip.generateAsync({type: "blob"}).then(function(content) {
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(content);
-                    a.download = currentItem.name + '_selected.zip';
-                    a.click();
-                });
+                    await addToZip(zip, selectedItem, '');
+                }
+                const content = await zip.generateAsync({type: "blob"});
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(content);
+                a.download = currentItem.name + '_selected.zip';
+                a.click();
             }
         };
     </script>
