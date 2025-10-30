@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloud Archiv</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         body {
             margin: 0;
@@ -274,6 +275,24 @@
             margin-right: 10px;
             cursor: pointer;
         }
+        .shared-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        .shared-frame {
+            width: 300px;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+        }
     </style>
 </head>
 <body>
@@ -315,6 +334,7 @@
             <button class="close-btn" onclick="closeFolderPopup()">×</button>
             <h3>Obsah: <span id="folder-name"></span></h3>
             <p>Celková velikost: <span id="folder-size"></span></p>
+            <button id="download-whole">Stáhnout celou složku</button>
             <button id="download-selected">Stáhnout vybrané (0)</button>
             <ul id="folder-content" class="folder-content"></ul>
         </div>
@@ -337,16 +357,69 @@
         const folderSizeEl = document.getElementById('folder-size');
         const folderContent = document.getElementById('folder-content');
         const downloadSelected = document.getElementById('download-selected');
+        const downloadWhole = document.getElementById('download-whole');
         const previewPopup = document.getElementById('preview-popup');
         const previewContent = document.getElementById('preview-content');
         const archiveSection = document.getElementById('archive');
+        const dashboard = document.getElementById('dashboard');
 
         let items = [];
         let usedStorage = 0;
         const totalStorage = 10;
         let selectedCount = 0;
         let currentChildren = [];
+        let currentItem = null;
         let currentIndex = -1;
+        let isSharedMode = false;
+
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('share')) {
+            const id = urlParams.get('share');
+            const sharedData = localStorage.getItem('shared_' + id);
+            if (sharedData) {
+                const sharedItem = JSON.parse(sharedData);
+                isSharedMode = true;
+                dashboard.style.display = 'none';
+                const sharedContainer = document.createElement('div');
+                sharedContainer.className = 'shared-container';
+                const frame = document.createElement('div');
+                frame.className = 'shared-frame';
+                frame.innerHTML = `
+                    <div class="file-icon">${sharedItem.type === 'folder' ? '📁' : '📄'}</div>
+                    <span class="file-name">${sharedItem.name}</span>
+                    <div class="file-size">${formatSize(sharedItem.size)}</div>
+                `;
+                sharedContainer.appendChild(frame);
+                const downloadBtn = document.createElement('button');
+                downloadBtn.textContent = 'Stáhnout';
+                downloadBtn.onclick = () => {
+                    currentItem = sharedItem;
+                    folderName.textContent = sharedItem.name;
+                    folderSizeEl.textContent = formatSize(sharedItem.size);
+                    folderContent.innerHTML = '';
+                    selectedCount = 0;
+                    updateDownloadButton();
+                    currentChildren = sharedItem.type === 'folder' ? sharedItem.children : [sharedItem];
+                    currentChildren.forEach((child, childIndex) => {
+                        const li = document.createElement('li');
+                        li.className = 'folder-item';
+                        let thumbnail = '';
+                        if (['jpg', 'png', 'gif', 'mp4', 'mkv', 'avi'].includes(child.ext)) {
+                            thumbnail = `<span class="thumbnail-placeholder">Náhled nedostupný</span>`;
+                        }
+                        li.innerHTML = `
+                            ${thumbnail}
+                            <input type="checkbox" onchange="toggleSelect(this, ${childIndex})">
+                            ${child.name} (${formatSize(child.size)})
+                        `;
+                        folderContent.appendChild(li);
+                    });
+                    folderPopup.style.display = 'block';
+                };
+                sharedContainer.appendChild(downloadBtn);
+                document.body.appendChild(sharedContainer);
+            }
+        }
 
         document.getElementById('file-input').addEventListener('change', (e) => {
             handleFiles(e.target.files);
@@ -372,7 +445,8 @@
                             path: file.webkitRelativePath,
                             ext: part.split('.').pop().toLowerCase(),
                             shared: false,
-                            link: ''
+                            link: '',
+                            fileObj: file
                         });
                         usedStorage += file.size / 1024 / 1024 / 1024;
                     } else {
@@ -398,6 +472,15 @@
             });
         }
 
+        function formatSize(size) {
+            size = parseFloat(size);
+            if (size >= 1024) {
+                return (size / 1024).toFixed(2) + ' GB';
+            } else {
+                return size.toFixed(2) + ' MB';
+            }
+        }
+
         function renderItems() {
             fileList.innerHTML = '';
             items.forEach((item, index) => {
@@ -406,7 +489,7 @@
                 li.innerHTML = `
                     <div class="file-icon">${item.type === 'folder' ? '📁' : '📄'}</div>
                     <span class="file-name" contenteditable="false" ondblclick="editName(this, ${index})">${item.name}</span>
-                    <div class="file-size">${item.size} MB</div>
+                    <div class="file-size">${formatSize(item.size)}</div>
                     <div class="file-actions">
                         <button class="action-btn" onclick="downloadItem(${index})">Stáhnout</button>
                         ${item.shared ? 
@@ -440,8 +523,9 @@
 
         function openDetailPopup(index) {
             const item = items[index];
+            currentItem = item;
             folderName.textContent = item.name;
-            folderSizeEl.textContent = `${item.size} MB`;
+            folderSizeEl.textContent = formatSize(item.size);
             folderContent.innerHTML = '';
             selectedCount = 0;
             updateDownloadButton();
@@ -451,14 +535,14 @@
                 li.className = 'folder-item';
                 let thumbnail = '';
                 if (['jpg', 'png', 'gif'].includes(child.ext)) {
-                    thumbnail = `<img class="thumbnail" src="${URL.createObjectURL(new Blob())}" alt="thumbnail" onclick="openPreview('${child.ext}', '${child.path}')">`;
+                    thumbnail = `<img class="thumbnail" src="${URL.createObjectURL(child.fileObj)}" alt="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})">`;
                 } else if (['mp4', 'mkv', 'avi'].includes(child.ext)) {
-                    thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', '${child.path}')"><source src="${URL.createObjectURL(new Blob())}" type="video/${child.ext}"></video>`;
+                    thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})"><source src="${URL.createObjectURL(child.fileObj)}" type="video/${child.ext}"></video>`;
                 }
                 li.innerHTML = `
                     ${thumbnail}
                     <input type="checkbox" onchange="toggleSelect(this, ${childIndex})">
-                    ${child.name} (${child.size} MB)
+                    ${child.name} (${formatSize(child.size)})
                 `;
                 folderContent.appendChild(li);
             });
@@ -480,15 +564,15 @@
 
         function updateDownloadButton() {
             downloadSelected.textContent = `Stáhnout vybrané (${selectedCount})`;
-            downloadSelected.onclick = () => alert(`Stahování ${selectedCount} vybraných souborů... (mock)`);
         }
 
-        function openPreview(ext, path) {
+        function openPreview(ext, childIndex) {
+            const child = currentChildren[childIndex];
             previewContent.innerHTML = '';
             if (['jpg', 'png', 'gif'].includes(ext)) {
-                previewContent.innerHTML = `<img src="${path}" style="max-width: 100%;">`;
+                previewContent.innerHTML = `<img src="${URL.createObjectURL(child.fileObj)}" style="max-width: 100%;">`;
             } else if (['mp4', 'mkv', 'avi'].includes(ext)) {
-                previewContent.innerHTML = `<video controls style="max-width: 100%;"><source src="${path}" type="video/${ext}"></video>`;
+                previewContent.innerHTML = `<video controls style="max-width: 100%;"><source src="${URL.createObjectURL(child.fileObj)}" type="video/${ext}"></video>`;
             }
             previewPopup.style.display = 'block';
         }
@@ -502,14 +586,58 @@
         }
 
         function downloadItem(index) {
-            alert(`Stahování celého ${items[index].name}... (mock)`);
+            const item = items[index];
+            downloadSingleItem(item, item.name);
+        }
+
+        function downloadSingleItem(item, downloadName) {
+            if (item.type === 'file') {
+                if (item.fileObj) {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(item.fileObj);
+                    a.download = downloadName || item.name;
+                    a.click();
+                }
+            } else {
+                const zip = new JSZip();
+                addToZip(zip, item, '');
+                zip.generateAsync({type: "blob"}).then(function(content) {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(content);
+                    a.download = (downloadName || item.name) + '.zip';
+                    a.click();
+                });
+            }
+        }
+
+        function addToZip(zip, node, path) {
+            if (node.type === 'file') {
+                zip.file(path + node.name, node.fileObj);
+            } else {
+                const folderZip = zip.folder(path + node.name);
+                node.children.forEach(child => {
+                    addToZip(folderZip, child, '');
+                });
+            }
         }
 
         function shareItem(index) {
+            const id = Math.random().toString(36).substring(2, 10);
+            // Store without fileObj
+            const itemCopy = JSON.parse(JSON.stringify(items[index]));
+            removeFileObjs(itemCopy);
+            localStorage.setItem('shared_' + id, JSON.stringify(itemCopy));
+            items[index].link = `https://darqsideee.github.io/pepa/?share=${id}`;
             items[index].shared = true;
-            items[index].link = `https://example.com/share/${Math.random().toString(36).substring(7)}`;
             renderItems();
-            openSharePopup(index); // Otevřít popup po sdílení
+            openSharePopup(index);
+        }
+
+        function removeFileObjs(node) {
+            delete node.fileObj;
+            if (node.type === 'folder') {
+                node.children.forEach(removeFileObjs);
+            }
         }
 
         function openSharePopup(index) {
@@ -528,13 +656,15 @@
 
         function copyLink() {
             navigator.clipboard.writeText(shareLinkInput.value);
-            alert('Odkaz zkopírován!');
         }
 
         function regenerateLink() {
-            items[currentIndex].link = `https://example.com/share/${Math.random().toString(36).substring(7)}`;
+            const id = Math.random().toString(36).substring(2, 10);
+            const itemCopy = JSON.parse(JSON.stringify(items[currentIndex]));
+            removeFileObjs(itemCopy);
+            localStorage.setItem('shared_' + id, JSON.stringify(itemCopy));
+            items[currentIndex].link = `https://darqsideee.github.io/pepa/?share=${id}`;
             shareLinkInput.value = items[currentIndex].link;
-            alert('Odkaz převytvořen!');
         }
 
         function removeShare() {
@@ -557,6 +687,39 @@
             if (e.target === folderPopup) closeFolderPopup();
             if (e.target === previewPopup) closePreviewPopup();
         });
+
+        downloadWhole.onclick = () => {
+            if (isSharedMode) {
+                return;
+            }
+            downloadSingleItem(currentItem, currentItem.name);
+        };
+
+        downloadSelected.onclick = () => {
+            if (isSharedMode) {
+                return;
+            }
+            const checkboxes = folderContent.querySelectorAll('input[type="checkbox"]:checked');
+            if (checkboxes.length === 0) return;
+            if (checkboxes.length === 1) {
+                const childIndex = Array.from(checkboxes[0].parentNode.querySelectorAll('input[type="checkbox"]')).indexOf(checkboxes[0]);
+                const selectedItem = currentChildren[childIndex];
+                downloadSingleItem(selectedItem, selectedItem.name);
+            } else {
+                const zip = new JSZip();
+                checkboxes.forEach(checkbox => {
+                    const childIndex = Array.from(folderContent.querySelectorAll('input[type="checkbox"]')).indexOf(checkbox);
+                    const selectedItem = currentChildren[childIndex];
+                    addToZip(zip, selectedItem, '');
+                });
+                zip.generateAsync({type: "blob"}).then(function(content) {
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(content);
+                    a.download = currentItem.name + '_selected.zip';
+                    a.click();
+                });
+            }
+        };
     </script>
 </body>
 </html>
