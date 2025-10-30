@@ -1,4 +1,3 @@
-kod
 <!DOCTYPE html>
 <html lang="cs">
 <head>
@@ -358,8 +357,16 @@ kod
                 pathParts.forEach((part, i) => {
                     if (part === '') return;
                     if (i === pathParts.length - 1) {
+                        let name = part;
+                        const baseName = name.split(' (')[0];
+                        const existing = current.children.filter(c => c.name.startsWith(baseName));
+                        if (existing.length > 0) {
+                            let count = 1;
+                            while (existing.some(c => c.name === (count === 1 ? name : `${baseName} (${count})`))) count++;
+                            name = `${baseName} (${count})`;
+                        }
                         current.children.push({
-                            name: part,
+                            name: name,
                             type: 'file',
                             size: (file.size / 1024 / 1024).toFixed(2),
                             path: file.webkitRelativePath,
@@ -369,16 +376,34 @@ kod
                         });
                         usedStorage += file.size / 1024 / 1024 / 1024;
                     } else {
-                        let folder = current.children.find(c => c.name === part && c.type === 'folder');
+                        let name = part;
+                        const baseName = name.split(' (')[0];
+                        const existing = current.children.filter(c => c.name.startsWith(baseName) && c.type === 'folder');
+                        if (existing.length > 0) {
+                            let count = 1;
+                            while (existing.some(c => c.name === (count === 1 ? name : `${baseName} (${count})`))) count++;
+                            name = `${baseName} (${count})`;
+                        }
+                        let folder = current.children.find(c => c.name === name && c.type === 'folder');
                         if (!folder) {
-                            folder = { name: part, type: 'folder', children: [], size: 0 };
+                            folder = { name: name, type: 'folder', children: [], size: 0 };
                             current.children.push(folder);
                         }
                         current = folder;
                     }
                 });
             });
-            items.push(...root.children);
+            // Přidání do items s kontrolou duplicit na root level
+            root.children.forEach(newItem => {
+                const baseName = newItem.name.split(' (')[0];
+                const existingRoot = items.filter(i => i.name.startsWith(baseName) && i.type === newItem.type);
+                if (existingRoot.length > 0) {
+                    let count = 1;
+                    while (existingRoot.some(i => i.name === (count === 1 ? newItem.name : `${baseName} (${count})`))) count++;
+                    newItem.name = `${baseName} (${count})`;
+                }
+                items.push(newItem);
+            });
             calculateSizes(items);
         }
 
@@ -458,10 +483,6 @@ kod
             folderPopup.style.display = 'block';
         }
 
-        function closeFolderPopup() {
-            folderPopup.style.display = 'none';
-        }
-
         function toggleSelect(checkbox, childIndex) {
             selectedCount += checkbox.checked ? 1 : -1;
             updateDownloadButton();
@@ -482,10 +503,6 @@ kod
             previewPopup.style.display = 'block';
         }
 
-        function closePreviewPopup() {
-            previewPopup.style.display = 'none';
-        }
-
         function downloadItem(index) {
             alert(`Stahování celého ${items[index].name}... (mock)`);
         }
@@ -494,7 +511,7 @@ kod
             items[index].shared = true;
             items[index].link = `https://example.com/share/${Math.random().toString(36).substring(7)}`;
             renderItems();
-            openSharePopup(index); // Otevřít popup po sdílení
+            openSharePopup(index);
         }
 
         function openSharePopup(index) {
@@ -503,13 +520,12 @@ kod
             sharePopup.style.display = 'block';
         }
 
-        function closeSharePopup() {
-            sharePopup.style.display = 'none';
-        }
-
         function copyLink() {
-            navigator.clipboard.writeText(shareLinkInput.value);
-            alert('Odkaz zkopírován!');
+            navigator.clipboard.writeText(shareLinkInput.value).then(() => {
+                alert('Odkaz zkopírován!');
+            }).catch(err => {
+                alert('Chyba při kopírování: ' + err);
+            });
         }
 
         function regenerateLink() {
@@ -521,7 +537,7 @@ kod
         function removeShare() {
             items[currentIndex].shared = false;
             items[currentIndex].link = '';
-            closeSharePopup();
+            closePopup('share-popup');
             renderItems();
         }
 
@@ -531,14 +547,22 @@ kod
             storageText.textContent = `${usedStorage.toFixed(1)} GB z ${totalStorage} GB`;
         }
 
+        function closePopup(id) {
+            const popup = document.getElementById(id);
+            popup.classList.add('closing');
+            setTimeout(() => {
+                popup.style.display = 'none';
+                popup.classList.remove('closing');
+            }, 300);
+        }
+
         updateStorage();
 
         window.addEventListener('click', (e) => {
-            if (e.target === sharePopup) closeSharePopup();
-            if (e.target === folderPopup) closeFolderPopup();
-            if (e.target === previewPopup) closePreviewPopup();
+            if (e.target === sharePopup) closePopup('share-popup');
+            if (e.target === folderPopup) closePopup('folder-popup');
+            if (e.target === previewPopup) closePopup('preview-popup');
         });
     </script>
 </body>
 </html>
-
