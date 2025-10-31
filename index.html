@@ -389,7 +389,7 @@
             <button class="close-btn" onclick="closeFolderPopup()">×</button>
             <h3>Obsah: <span id="folder-name"></span></h3>
             <p>Celková velikost: <span id="folder-size"></span></p>
-            <button id="download-whole">Stáhnout celý soubor</button>
+            <button id="download-whole">Stáhnout vše</button>
             <button id="download-selected">Stáhnout vybrané (0)</button>
             <ul id="folder-content" class="folder-content"></ul>
         </div>
@@ -403,7 +403,7 @@
 
     <script>
         const workerUrl = 'https://realpepa.darqsideee.workers.dev';
-        const publicBase = 'https://pub-abcdef1234567890.r2.dev/'; // Nahraďte vaším public R2 URL, pokud je znám
+        const publicBase = 'https://pub-abcdef1234567890.r2.dev/'; // Nahraďte vaším public R2 URL
 
         const fileList = document.getElementById('file-list');
         const storageBar = document.getElementById('storage-bar');
@@ -464,13 +464,16 @@
                         currentChildren.forEach((child, childIndex) => {
                             const li = document.createElement('li');
                             li.className = 'folder-item';
-                            const icon = child.type === 'folder' ? '📁' : '📄';
+                            let iconHtml = `<div class="file-icon">${child.type === 'folder' ? '📁' : '📄'}</div>`;
                             let thumbnail = '';
-                            if (['jpg', 'png', 'gif', 'mp4', 'mkv', 'avi'].includes(child.ext)) {
-                                thumbnail = `<span class="thumbnail-placeholder">Náhled nedostupný</span>`;
+                            if (['jpg', 'jpeg', 'png', 'gif'].includes(child.ext)) {
+                                iconHtml = '';
+                                thumbnail = `<img class="thumbnail" src="${child.url}" alt="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})">`;
+                            } else if (['mp4', 'mkv', 'avi'].includes(child.ext)) {
+                                thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})"><source src="${child.url}" type="video/${child.ext}"></video>`;
                             }
                             li.innerHTML = `
-                                <div class="file-icon">${icon}</div>
+                                ${iconHtml}
                                 ${thumbnail}
                                 <input type="checkbox" onchange="toggleSelect(this, ${childIndex})">
                                 ${child.name} (${formatSize(child.size)})
@@ -654,15 +657,16 @@
             currentChildren.forEach((child, childIndex) => {
                 const li = document.createElement('li');
                 li.className = 'folder-item';
-                const icon = child.type === 'folder' ? '📁' : '📄';
+                let iconHtml = `<div class="file-icon">${child.type === 'folder' ? '📁' : '📄'}</div>`;
                 let thumbnail = '';
-                if (['jpg', 'png', 'gif'].includes(child.ext)) {
+                if (['jpg', 'jpeg', 'png', 'gif'].includes(child.ext)) {
+                    iconHtml = '';
                     thumbnail = `<img class="thumbnail" src="${child.url}" alt="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})">`;
                 } else if (['mp4', 'mkv', 'avi'].includes(child.ext)) {
                     thumbnail = `<video class="thumbnail" onclick="openPreview('${child.ext}', ${childIndex})"><source src="${child.url}" type="video/${child.ext}"></video>`;
                 }
                 li.innerHTML = `
-                    <div class="file-icon">${icon}</div>
+                    ${iconHtml}
                     ${thumbnail}
                     <input type="checkbox" onchange="toggleSelect(this, ${childIndex})">
                     ${child.name} (${formatSize(child.size)})
@@ -692,7 +696,7 @@
         function openPreview(ext, childIndex) {
             const child = currentChildren[childIndex];
             previewContent.innerHTML = '';
-            if (['jpg', 'png', 'gif'].includes(ext)) {
+            if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
                 previewContent.innerHTML = `<img src="${child.url}" style="max-width: 100%;">`;
             } else if (['mp4', 'mkv', 'avi'].includes(ext)) {
                 previewContent.innerHTML = `<video controls style="max-width: 100%;"><source src="${child.url}" type="video/${ext}"></video>`;
